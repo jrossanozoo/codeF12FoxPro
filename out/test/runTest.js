@@ -27,13 +27,13 @@ const path = __importStar(require("path"));
 const test_electron_1 = require("@vscode/test-electron");
 async function main() {
     try {
-        // El directorio de desarrollo de la extensi�n - 
+        // El directorio de desarrollo de la extensión - 
         // pasado a --extensionDevelopmentPath
         const extensionDevelopmentPath = path.resolve(__dirname, '../../');
         // El path del test runner
         // pasado a --extensionTestsPath
         const extensionTestsPath = path.resolve(__dirname, './suite/index');
-        // Descargar VS Code, descomprimir y ejecutar la integraci�n de tests
+        // Descargar VS Code, descomprimir y ejecutar la integración de tests
         await (0, test_electron_1.runTests)({ extensionDevelopmentPath, extensionTestsPath });
     }
     catch (err) {

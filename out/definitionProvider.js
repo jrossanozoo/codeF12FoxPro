@@ -44,12 +44,12 @@ class FoxProDefinitionProvider {
     }
     /**
      * Extrae el nombre de la clase y el tipo de instanciación desde una línea de código
-     * Solo retorna información si detecta un patrón válido de instanciación
+     * Extrae el parámetro de clase sin importar la posición del cursor en la línea
      */
     extractClassNameAndType(line, character) {
         // Limpiar la línea
         const cleanLine = line.trim();
-        // Patterns para detectar instanciación de clases con mayor precisión
+        // Patterns para detectar instanciación de clases
         const patterns = [
             // createobject("nombre_de_clase")
             {
@@ -95,7 +95,7 @@ class FoxProDefinitionProvider {
                 type: 'instanciarcomponente',
                 captureGroup: 1
             },
-            // _screen.zoo.instanciarentidad("nombre_de_entidad")
+            // _screen.zoo.instanciarentidad("nombre_de_entidad") - case insensitive
             {
                 regex: /_screen\.zoo\.instanciarentidad\s*\(\s*['"]\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*['"]\s*\)/i,
                 type: 'instanciarentidad',
@@ -108,22 +108,36 @@ class FoxProDefinitionProvider {
                 captureGroup: 1
             }
         ];
+        // Buscar el patrón en la línea - CAMBIO IMPORTANTE: no verificar posición del cursor
         for (const pattern of patterns) {
             const match = cleanLine.match(pattern.regex);
             if (match) {
                 const className = match[pattern.captureGroup];
                 const filename = pattern.fileGroup ? match[pattern.fileGroup] : undefined;
-                // Verificar si el cursor está sobre el nombre de la clase
-                const startIndex = line.toLowerCase().indexOf(className.toLowerCase());
-                if (startIndex === -1)
-                    continue;
-                const endIndex = startIndex + className.length;
-                if (character >= startIndex && character <= endIndex) {
+                // Para las funciones del framework Organic, SIEMPRE extraer el parámetro
+                // sin importar dónde esté posicionado el cursor
+                if (pattern.type === 'instanciarentidad' ||
+                    pattern.type === 'instanciarcomponente' ||
+                    pattern.type === 'crearobjetoporproducto' ||
+                    pattern.type === 'crearobjeto' ||
+                    pattern.type === 'crearobjeto_with_file') {
                     return {
                         className: className,
                         type: pattern.type,
                         filename: filename
                     };
+                }
+                // Para otros tipos, verificar posición del cursor (comportamiento original)
+                const startIndex = line.toLowerCase().indexOf(className.toLowerCase());
+                if (startIndex !== -1) {
+                    const endIndex = startIndex + className.length;
+                    if (character >= startIndex && character <= endIndex) {
+                        return {
+                            className: className,
+                            type: pattern.type,
+                            filename: filename
+                        };
+                    }
                 }
             }
         }
@@ -202,24 +216,46 @@ class FoxProDefinitionProvider {
     }
     /**
      * Busca definiciones de entidades con el orden de prioridad específico
+     * Maneja conversión de CamelCase a lowercase para nombres de archivos
      */
     async findEntityDefinitions(basePath, className) {
         const locations = [];
-        // Orden de prioridad para InstanciarEntidad
-        const entityPatterns = [
-            `entColorYTalle_${className}.prg`,
-            `ent_${className}.prg`,
-            `din_Entidad${className}.prg`
+        // Generar variaciones del nombre de la clase
+        const classNameVariations = [
+            className,
+            className.toLowerCase(),
+            className.toUpperCase(),
+            // Primera letra mayúscula, resto minúscula
+            className.charAt(0).toUpperCase() + className.slice(1).toLowerCase()
         ];
-        for (const pattern of entityPatterns) {
-            const filePath = await this.findFileInWorkspace(basePath, pattern);
-            if (filePath) {
-                const location = await this.searchInFile(filePath, className);
-                if (location) {
-                    locations.push(location);
-                    break; // Encontrar solo el primero por prioridad
+        // Orden de prioridad para InstanciarEntidad con todas las variaciones
+        for (const classVar of classNameVariations) {
+            const entityPatterns = [
+                `ent_${classVar}.prg`,
+                `entColorYTalle_${classVar}.prg`,
+                `din_Entidad${classVar}.prg`,
+                `${classVar}.prg` // Fallback: nombre directo
+            ];
+            for (const pattern of entityPatterns) {
+                console.log(`Buscando archivo de entidad: ${pattern}`);
+                const filePath = await this.findFileInWorkspace(basePath, pattern);
+                if (filePath) {
+                    console.log(`Archivo encontrado: ${filePath}`);
+                    // Buscar la definición de clase dentro del archivo
+                    // Puede que la clase tenga un nombre diferente al archivo
+                    const location = await this.searchInFileForAnyClassDefinition(filePath, classNameVariations);
+                    if (location) {
+                        locations.push(location);
+                        return locations; // Encontrado, retornar inmediatamente
+                    }
                 }
             }
+        }
+        // Si no se encontró con patrones específicos, hacer búsqueda general en archivos .prg
+        if (locations.length === 0) {
+            console.log(`Búsqueda general para entidad: ${className}`);
+            const generalLocations = await this.searchForClassInPrgFiles(basePath, className);
+            locations.push(...generalLocations);
         }
         return locations;
     }
@@ -232,17 +268,31 @@ class FoxProDefinitionProvider {
         const componentPatterns = [
             `componente${className}.prg`,
             `Componente${className}.prg`,
-            `COMPONENTE${className}.prg`
+            `COMPONENTE${className}.prg`,
+            `${className}.prg` // Fallback: nombre directo
         ];
-        for (const pattern of componentPatterns) {
-            const filePath = await this.findFileInWorkspace(basePath, pattern);
-            if (filePath) {
-                const location = await this.searchInFile(filePath, className);
-                if (location) {
-                    locations.push(location);
-                    break; // Encontrar solo el primero
+        // Buscar con todos los casos posibles
+        for (const basePattern of componentPatterns) {
+            const patterns = [
+                basePattern,
+                basePattern.toLowerCase(),
+                basePattern.toUpperCase()
+            ];
+            for (const pattern of patterns) {
+                const filePath = await this.findFileInWorkspace(basePath, pattern);
+                if (filePath) {
+                    const location = await this.searchInFile(filePath, className);
+                    if (location) {
+                        locations.push(location);
+                        return locations; // Encontrado, retornar inmediatamente
+                    }
                 }
             }
+        }
+        // Si no se encontró con patrones específicos, hacer búsqueda general en archivos .prg
+        if (locations.length === 0) {
+            const generalLocations = await this.searchForClassInPrgFiles(basePath, className);
+            locations.push(...generalLocations);
         }
         return locations;
     }
@@ -255,33 +305,55 @@ class FoxProDefinitionProvider {
         const productPatterns = [
             `ColorYTalle_${className}.prg`,
             `coloryTalle_${className}.prg`,
-            `COLORYTALLE_${className}.prg`
+            `COLORYTALLE_${className}.prg`,
+            `${className}.prg` // Fallback: nombre directo
         ];
-        for (const pattern of productPatterns) {
-            const filePath = await this.findFileInWorkspace(basePath, pattern);
-            if (filePath) {
-                const location = await this.searchInFile(filePath, className);
-                if (location) {
-                    locations.push(location);
-                    return locations; // Encontrado con prefijo, retornar
+        // Buscar con todos los casos posibles
+        for (const basePattern of productPatterns) {
+            const patterns = [
+                basePattern,
+                basePattern.toLowerCase(),
+                basePattern.toUpperCase()
+            ];
+            for (const pattern of patterns) {
+                const filePath = await this.findFileInWorkspace(basePath, pattern);
+                if (filePath) {
+                    const location = await this.searchInFile(filePath, className);
+                    if (location) {
+                        locations.push(location);
+                        return locations; // Encontrado, retornar inmediatamente
+                    }
                 }
             }
         }
-        // Si no se encontró con prefijo, buscar directamente el nombre de la clase
-        const directPatterns = [
-            `${className}.prg`,
-            `${className.toLowerCase()}.prg`,
-            `${className.toUpperCase()}.prg`
-        ];
-        for (const pattern of directPatterns) {
-            const filePath = await this.findFileInWorkspace(basePath, pattern);
-            if (filePath) {
-                const location = await this.searchInFile(filePath, className);
+        // Si no se encontró con patrones específicos, hacer búsqueda general en archivos .prg
+        if (locations.length === 0) {
+            const generalLocations = await this.searchForClassInPrgFiles(basePath, className);
+            locations.push(...generalLocations);
+        }
+        return locations;
+    }
+    /**
+     * Busca una clase en todos los archivos .prg del workspace
+     * Esta es una búsqueda general que se usa como fallback
+     */
+    async searchForClassInPrgFiles(basePath, className) {
+        const locations = [];
+        try {
+            // Buscar todos los archivos .prg en el workspace
+            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(basePath, '**/*.{prg,PRG}'), '**/node_modules/**', 100 // Límite para evitar sobrecarga
+            );
+            // Buscar la definición de la clase en cada archivo
+            for (const file of files) {
+                const location = await this.searchInFile(file.fsPath, className);
                 if (location) {
                     locations.push(location);
-                    break;
+                    // Continuar buscando para encontrar todas las posibles definiciones
                 }
             }
+        }
+        catch (error) {
+            console.error('Error searching for class in .prg files:', error);
         }
         return locations;
     }
@@ -295,7 +367,7 @@ class FoxProDefinitionProvider {
         if (currentFileLocation) {
             locations.push(currentFileLocation);
         }
-        // 2. Buscar archivo con el mismo nombre de la clase
+        // 2. Buscar archivo con el mismo nombre de la clase (asegurando extensión .prg)
         const directFilePatterns = [
             `${className}.prg`,
             `${className.toLowerCase()}.prg`,
@@ -310,9 +382,9 @@ class FoxProDefinitionProvider {
                 }
             }
         }
-        // 3. Si no se encuentra nada, hacer búsqueda general (limitada)
+        // 3. Si no se encuentra nada, hacer búsqueda general en archivos .prg
         if (locations.length === 0) {
-            const generalLocations = await this.searchInWorkspace(basePath, className, 20);
+            const generalLocations = await this.searchForClassInPrgFiles(basePath, className);
             locations.push(...generalLocations);
         }
         return locations;
@@ -340,6 +412,47 @@ class FoxProDefinitionProvider {
         return null;
     }
     /**
+     * Busca la definición de cualquiera de las variaciones del nombre de clase en un archivo
+     */
+    async searchInFileForAnyClassDefinition(filePath, classNameVariations) {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Buscar cualquier definición de clase en el archivo
+                const classMatch = line.match(/define\s+class\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
+                if (classMatch) {
+                    const foundClassName = classMatch[1];
+                    // Verificar si alguna variación coincide con la clase encontrada
+                    for (const variation of classNameVariations) {
+                        if (foundClassName.toLowerCase() === variation.toLowerCase()) {
+                            const position = new vscode.Position(i, classMatch.index || 0);
+                            const uri = vscode.Uri.file(filePath);
+                            console.log(`Clase encontrada: ${foundClassName} en ${filePath}:${i}`);
+                            return new vscode.Location(uri, position);
+                        }
+                    }
+                    // También verificar si la clase encontrada contiene alguna variación
+                    // Por ejemplo: ent_OrdenDeProduccion vs OrdenDeProduccion
+                    for (const variation of classNameVariations) {
+                        if (foundClassName.toLowerCase().includes(variation.toLowerCase()) ||
+                            variation.toLowerCase().includes(foundClassName.toLowerCase())) {
+                            const position = new vscode.Position(i, classMatch.index || 0);
+                            const uri = vscode.Uri.file(filePath);
+                            console.log(`Clase relacionada encontrada: ${foundClassName} en ${filePath}:${i}`);
+                            return new vscode.Location(uri, position);
+                        }
+                    }
+                }
+            }
+        }
+        catch (error) {
+            console.error(`Error reading file ${filePath}:`, error);
+        }
+        return null;
+    }
+    /**
      * Busca un archivo en todo el workspace
      */
     async findFileInWorkspace(basePath, fileName) {
@@ -354,6 +467,7 @@ class FoxProDefinitionProvider {
     }
     /**
      * Busca definiciones de clase en todo el workspace (con límite para eficiencia)
+     * DEPRECATED: Usar searchForClassInPrgFiles en su lugar
      */
     async searchInWorkspace(basePath, className, maxFiles = 50) {
         const locations = [];
