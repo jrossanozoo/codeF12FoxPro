@@ -1,0 +1,73 @@
+{
+  "name": "foxpro-go-to-definition",
+  "displayName": "FoxPro Go to Definition",
+  "description": "Habilita la funcionalidad 'Go to Definition' (F12) para archivos FoxPro con soporte para el framework Organic",
+  "version": "1.0.0",
+  "publisher": "foxpro-extensions",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "foxpro",
+    "visual foxpro",
+    "go to definition",
+    "organic framework"
+  ],
+  "activationEvents": [
+    "onLanguage:foxpro"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "foxpro",
+        "aliases": [
+          "FoxPro",
+          "Visual FoxPro",
+          "foxpro"
+        ],
+        "extensions": [
+          ".prg",
+          ".PRG"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "foxpro.goToDefinition",
+        "title": "Go to Definition",
+        "category": "FoxPro"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^16.18.126",
+    "@types/vscode": "^1.104.0",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^8.57.1",
+    "glob": "^11.0.3",
+    "mocha": "^11.7.2",
+    "typescript": "^4.9.5",
+    "vsce": "^1.103.1"
+  },
+  "dependencies": {
+    "@vscode/vsce": "^3.6.0"
+  }
+}

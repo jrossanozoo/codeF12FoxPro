@@ -1,0 +1,19 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "*.prg": "foxpro",
+            "*.PRG": "foxpro"
+        },
+        "typescript.preferences.includePackageJsonAutoImports": "auto"
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.vscode-typescript-next"
+        ]
+    }
+}
