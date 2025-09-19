@@ -32,9 +32,9 @@ function activate(context) {
     const definitionProvider = new definitionProvider_1.FoxProDefinitionProvider();
     // Registrar para archivos con language ID 'foxpro'
     const disposable = vscode.languages.registerDefinitionProvider({ scheme: 'file', language: 'foxpro' }, definitionProvider);
-    // Tambi�n registrar para archivos .prg que no tengan el language ID configurado
+    // También registrar para archivos .prg que no tengan el language ID configurado
     const disposablePrg = vscode.languages.registerDefinitionProvider({ scheme: 'file', pattern: '**/*.prg' }, definitionProvider);
-    // Registrar para archivos .PRG (may�sculas)
+    // Registrar para archivos .PRG (mayúsculas)
     const disposablePrgUpper = vscode.languages.registerDefinitionProvider({ scheme: 'file', pattern: '**/*.PRG' }, definitionProvider);
     context.subscriptions.push(disposable, disposablePrg, disposablePrgUpper);
 }
